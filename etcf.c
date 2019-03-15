@@ -470,8 +470,17 @@ uint8_t *decomp(FILE *fh, int width, int height)
 
 int main(int argc, char *argv[])
 {
-    FILE *fh;
+    FILE *fh, *fout;
     uint8_t *buffer;
+    const size_t width = 512;
+    const size_t height = 512;
+    const char *outfile = "etcf.bin";
+    size_t outsize = width * height * 3;
+    size_t ret;
+
+    /* FIXME: Ahh, well, we probably want it to accept the resolution... */
+    /* FIXME: And we probably want to verify the user-specified resolution matches the size of the file. */
+    /* FIXME: And we probably want to guess a square if the user supplies no resolution. */
 
     if (argc < 2) {
         fprintf(stderr, "usage: %s <filename>\n", argv[0]);
@@ -484,18 +493,26 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    buffer = decomp(fh, 512, 512);
+    buffer = decomp(fh, width, height);
     if (!buffer) {
       fprintf(stderr, "Decomposition failed\n");
       fclose(fh);
       return EXIT_FAILURE;
     }
 
-    FILE *fout = fopen("etcf.bin", "w");
-    fwrite(buffer, 1, (512*512*3), fout);
+    /* FIXME: Probably want to return the number of pixels directly from decomp. */
+    /* FIXME: And we probably want to let the user specify an output filename. */
+
+    fout = fopen(outfile, "w");
+    ret = fwrite(buffer, 1, outsize, fout);
+    if (ret != outsize) {
+        fprintf(stderr, "Failed to write %s\n", outfile);
+    } else {
+        fprintf(stderr, "Wrote %zd bytes to %s\n", outsize, outfile);
+    }
+
     fclose(fout);
     free(buffer);
-
     fclose(fh);
     return EXIT_SUCCESS;
 }
