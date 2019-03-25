@@ -4,6 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <endian.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <math.h>
 
 /* License: I have no earthly idea. Whatever Khronos allows for works derived
  * from their specifications. Good luck! */
@@ -471,26 +475,88 @@ uint8_t *decomp(FILE *fh, int width, int height)
 int main(int argc, char *argv[])
 {
     FILE *fh, *fout;
-    uint8_t *buffer;
-    const size_t width = 512;
-    const size_t height = 512;
+    const char *infile;
     const char *outfile = "etcf.bin";
-    size_t outsize = width * height * 3;
-    size_t ret;
+    int fd;
+    struct stat buf = { 0 };
 
-    /* FIXME: Ahh, well, we probably want it to accept the resolution... */
-    /* FIXME: And we probably want to verify the user-specified resolution matches the size of the file. */
-    /* FIXME: And we probably want to guess a square if the user supplies no resolution. */
+    size_t width = 0;
+    size_t height = 0;
+    size_t nblocks, wblocks, hblocks, minblocks, minbytes;
+
+    uint8_t *buffer;
+    size_t outsize;
+    size_t ret;
+    int rc = EXIT_SUCCESS;
 
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <filename>\n", argv[0]);
+        fprintf(stderr, "usage: %s <filename> [width [height]]\n", argv[0]);
+        return EXIT_FAILURE;
+    } else {
+        infile = argv[1];
+    }
+
+    fh = fopen(infile, "r");
+    if (!fh) {
+        perror("Couldn't open file");
         return EXIT_FAILURE;
     }
 
-    fh = fopen(argv[1], "r");
-    if (!fh) {
-        perror("");
-        return EXIT_FAILURE;
+    if (argc >= 3) {
+      width = atoi(argv[2]);
+    }
+
+    if (argc >= 4) {
+      height = atoi(argv[3]);
+    }
+
+    fd = fileno(fh);
+    if (fd == -1) {
+      rc = errno;
+      perror("Couldn't get file descriptor for file");
+      goto out1;
+    }
+
+    if (fstat(fd, &buf) == -1) {
+      rc = errno;
+      perror("Couldn't fstat() file");
+      goto out1;
+    }
+
+    nblocks = buf.st_size / sizeof(uint64_t);
+    if (DEBUG) {
+      fprintf(stderr, "filesize is %zd\n", buf.st_size);
+      fprintf(stderr, "nblocks is %zd\n", nblocks);
+    }
+
+    if (width == 0) {
+      wblocks = sqrt(nblocks);
+      width = wblocks * 4;
+      fprintf(stdout, "guessing width: %zd blocks, %zd pixels\n", wblocks, width);
+    }
+
+    if (height == 0) {
+      wblocks = ((width + 3) / 4);
+      hblocks = nblocks / wblocks;
+      height = hblocks * 4;
+      fprintf(stdout, "guessing height: %zd blocks, %zd pixels\n", hblocks, height);
+    }
+
+    minblocks = ((width + 3) / 4) * ((height + 3) / 4);
+    minbytes = minblocks * sizeof(uint64_t);
+
+    if (DEBUG) {
+      fprintf(stderr, "estimated blocksize is %zd\n", minblocks);
+      fprintf(stderr, "minimum bitesize is %zd\n", minbytes);
+    }
+
+    if (minbytes > buf.st_size) {
+      fprintf(stderr, "The resolution specified (%zd x %zd) "
+	      "requires a minimum of %zd bytes, "
+	      "but the file passed has only %zd bytes\n",
+	      width, height, minbytes, buf.st_size);
+      rc = EINVAL;
+      goto out1;
     }
 
     buffer = decomp(fh, width, height);
@@ -502,17 +568,19 @@ int main(int argc, char *argv[])
 
     /* FIXME: Probably want to return the number of pixels directly from decomp. */
     /* FIXME: And we probably want to let the user specify an output filename. */
-
+    outsize = width * height * 3;
     fout = fopen(outfile, "w");
     ret = fwrite(buffer, 1, outsize, fout);
     if (ret != outsize) {
         fprintf(stderr, "Failed to write %s\n", outfile);
+	rc = EXIT_FAILURE;
     } else {
         fprintf(stderr, "Wrote %zd bytes to %s\n", outsize, outfile);
     }
 
     fclose(fout);
     free(buffer);
+ out1:
     fclose(fh);
-    return EXIT_SUCCESS;
+    return rc;
 }
