@@ -409,8 +409,6 @@ uint8_t *decomp(FILE *fh, int width, int height)
     uint8_t *buffer;
     rgb8 **groups;
     size_t i = 0;
-    /*size_t b = 0;
-      size_t rgb = 0;*/
 
     buffer = (uint8_t *)malloc(width * height * 3);
     if (buffer == NULL) {
@@ -429,6 +427,14 @@ uint8_t *decomp(FILE *fh, int width, int height)
      * |2|6|a|e|
      * |3|7|b|f|
      * ---------
+     */
+
+    /* So for every four rows of the image, we need to get a full row of blocks,
+     * and then serialize them in an interleaved order:
+     * X0:[0,4,8,c] X1:[0,4,8,c] X2:[0,4,8,c] ..... XN:[0,4,8,c]
+     * X0:[1,5,9,d] X1:[1,5,9,d] ...
+     * X0:[2,6,a,e] X1:[2,6,a,e] ...
+     * X0:[3,7,b,f] X1:[3,7,b,f] ...
      */
 
     for (int y = 0; y < yblocks; y++) {
@@ -472,55 +478,29 @@ uint8_t *decomp(FILE *fh, int width, int height)
     return NULL;
 }
 
-int main(int argc, char *argv[])
+int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
 {
-    FILE *fh, *fout;
-    const char *infile;
-    const char *outfile = "etcf.bin";
-    int fd;
+    int fd, rc;
     struct stat buf = { 0 };
-
-    size_t width = 0;
-    size_t height = 0;
-    size_t nblocks, wblocks, hblocks, minblocks, minbytes;
-
+    size_t nblocks;
+    size_t minblocks, minbytes;
     uint8_t *buffer;
-    size_t outsize;
-    size_t ret;
-    int rc = EXIT_SUCCESS;
 
-    if (argc < 2) {
-        fprintf(stderr, "usage: %s <filename> [width [height]]\n", argv[0]);
-        return EXIT_FAILURE;
-    } else {
-        infile = argv[1];
-    }
-
-    fh = fopen(infile, "r");
     if (!fh) {
-        perror("Couldn't open file");
-        return EXIT_FAILURE;
-    }
-
-    if (argc >= 3) {
-      width = atoi(argv[2]);
-    }
-
-    if (argc >= 4) {
-      height = atoi(argv[3]);
+        return -EINVAL;
     }
 
     fd = fileno(fh);
     if (fd == -1) {
       rc = errno;
       perror("Couldn't get file descriptor for file");
-      goto out1;
+      return rc;
     }
 
     if (fstat(fd, &buf) == -1) {
       rc = errno;
       perror("Couldn't fstat() file");
-      goto out1;
+      return rc;
     }
 
     nblocks = buf.st_size / sizeof(uint64_t);
@@ -530,14 +510,16 @@ int main(int argc, char *argv[])
     }
 
     if (width == 0) {
-      wblocks = sqrt(nblocks);
+      size_t wblocks = sqrt(nblocks);
       width = wblocks * 4;
-      fprintf(stdout, "guessing width: %zd blocks, %zd pixels\n", wblocks, width);
+      if (DEBUG) {
+        fprintf(stdout, "guessing width: %zd blocks, %zd pixels\n", wblocks, width);
+      }
     }
 
     if (height == 0) {
-      wblocks = ((width + 3) / 4);
-      hblocks = nblocks / wblocks;
+      size_t wblocks = ((width + 3) / 4);
+      size_t hblocks = nblocks / wblocks;
       height = hblocks * 4;
       fprintf(stdout, "guessing height: %zd blocks, %zd pixels\n", hblocks, height);
     }
@@ -555,21 +537,70 @@ int main(int argc, char *argv[])
 	      "requires a minimum of %zd bytes, "
 	      "but the file passed has only %zd bytes\n",
 	      width, height, minbytes, buf.st_size);
-      rc = EINVAL;
-      goto out1;
+      return -EINVAL;
     }
 
     buffer = decomp(fh, width, height);
     if (!buffer) {
       fprintf(stderr, "Decomposition failed\n");
-      fclose(fh);
-      return EXIT_FAILURE;
+      return -1;
+    }
+
+    *outbuffer = buffer;
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    FILE *fh, *fout;
+    const char *infile;
+    const char *outfile;
+
+    size_t width = 0;
+    size_t height = 0;
+
+    uint8_t *buffer;
+    size_t outsize;
+    size_t ret;
+    int rc = EXIT_SUCCESS;
+
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s <filename> <output_file> [width [height]]\n", argv[0]);
+        return EXIT_FAILURE;
+    } else {
+        infile = argv[1];
+	outfile = argv[2];
+    }
+
+    if (argc >= 4) {
+      width = atoi(argv[3]);
+    }
+
+    if (argc >= 5) {
+      height = atoi(argv[4]);
+    }
+
+    fh = fopen(infile, "r");
+    if (!fh) {
+        perror("Couldn't open input file");
+        return EXIT_FAILURE;
+    }
+
+    fout = fopen(outfile, "w");
+    if (!fout) {
+      rc = EXIT_FAILURE;
+      perror("Couldn't open output file for writing");
+      goto out1;
+    }
+
+    rc = fdecomp(fh, width, height, &buffer);
+    if (rc != 0) {
+      fprintf(stderr, "Decomposition failed\n");
+      goto out2;
     }
 
     /* FIXME: Probably want to return the number of pixels directly from decomp. */
-    /* FIXME: And we probably want to let the user specify an output filename. */
     outsize = width * height * 3;
-    fout = fopen(outfile, "w");
     ret = fwrite(buffer, 1, outsize, fout);
     if (ret != outsize) {
         fprintf(stderr, "Failed to write %s\n", outfile);
@@ -578,8 +609,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Wrote %zd bytes to %s\n", outsize, outfile);
     }
 
-    fclose(fout);
     free(buffer);
+ out2:
+    fclose(fout);
  out1:
     fclose(fh);
     return rc;
