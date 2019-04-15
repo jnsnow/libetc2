@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <math.h>
 
+#include "libetc2.h"
+
 /* License: I have no earthly idea. Whatever Khronos allows for works derived
  * from their specifications. Good luck! */
 
@@ -30,16 +32,6 @@ int16_t codeword[8][4] = {{  2,   8,  -2,   -8},
                           { 47, 183, -47, -183}};
 
 uint8_t distance[8] = {3, 6, 11, 16, 23, 32, 41, 64};
-
-
-/**=== STRUCTURES ===**/
-
-typedef struct rgb8 {
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-} rgb8;
-
 
 /**=== MACROS AND PRIMITIVE BIT OPERATIONS ===**/
 
@@ -132,7 +124,7 @@ void extend_rgb676(rgb8 *v)
 }
 
 /* Fill pixel data for ETC1 modes */
-rgb8 *deblock_etc1(uint64_t block, rgb8 base[3])
+extern rgb8 *deblock_etc1(uint64_t block, rgb8 base[3])
 {
     rgb8 *pixels = (rgb8 *)malloc(sizeof(rgb8) * 16);
     uint8_t subblock;
@@ -202,7 +194,7 @@ rgb8 *deblock_etc1(uint64_t block, rgb8 base[3])
     return pixels;
 }
 
-rgb8 *deblock_etc2(uint64_t block, rgb8 base[3], char mode, uint8_t dist)
+extern rgb8 *deblock_etc2(uint64_t block, rgb8 base[3], char mode, uint8_t dist)
 {
     assert(dist < 8);
     assert(mode == 'T' || mode == 'H');
@@ -241,7 +233,7 @@ rgb8 *deblock_etc2(uint64_t block, rgb8 base[3], char mode, uint8_t dist)
     return pixels;
 }
 
-rgb8 *deblock_planar(uint64_t block, rgb8 base[3])
+extern rgb8 *deblock_planar(uint64_t block, rgb8 base[3])
 {
     rgb8 *pixels = (rgb8 *)malloc(sizeof(rgb8) * 16);
     /* O, H, V map to base[0], base[1], base[2] */
@@ -272,7 +264,7 @@ rgb8 *deblock_planar(uint64_t block, rgb8 base[3])
     return pixels;
 }
 
-rgb8 *deblock(FILE *fh)
+extern rgb8 *deblock(FILE *fh)
 {
     uint64_t block;
     size_t ret;
@@ -402,7 +394,7 @@ rgb8 *deblock(FILE *fh)
     return deblock_etc1(block, base);
 }
 
-uint8_t *decomp(FILE *fh, int width, int height)
+extern uint8_t *decomp(FILE *fh, int width, int height)
 {
     int xblocks = (width + 3) / 4;
     int yblocks = (height + 3) / 4;
@@ -478,7 +470,7 @@ uint8_t *decomp(FILE *fh, int width, int height)
     return NULL;
 }
 
-int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
+extern int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
 {
     int fd, rc;
     struct stat buf = { 0 };
@@ -548,71 +540,4 @@ int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
 
     *outbuffer = buffer;
     return 0;
-}
-
-int main(int argc, char *argv[])
-{
-    FILE *fh, *fout;
-    const char *infile;
-    const char *outfile;
-
-    size_t width = 0;
-    size_t height = 0;
-
-    uint8_t *buffer;
-    size_t outsize;
-    size_t ret;
-    int rc = EXIT_SUCCESS;
-
-    if (argc < 3) {
-        fprintf(stderr, "usage: %s <filename> <output_file> [width [height]]\n", argv[0]);
-        return EXIT_FAILURE;
-    } else {
-        infile = argv[1];
-	outfile = argv[2];
-    }
-
-    if (argc >= 4) {
-      width = atoi(argv[3]);
-    }
-
-    if (argc >= 5) {
-      height = atoi(argv[4]);
-    }
-
-    fh = fopen(infile, "r");
-    if (!fh) {
-        perror("Couldn't open input file");
-        return EXIT_FAILURE;
-    }
-
-    fout = fopen(outfile, "w");
-    if (!fout) {
-      rc = EXIT_FAILURE;
-      perror("Couldn't open output file for writing");
-      goto out1;
-    }
-
-    rc = fdecomp(fh, width, height, &buffer);
-    if (rc != 0) {
-      fprintf(stderr, "Decomposition failed\n");
-      goto out2;
-    }
-
-    /* FIXME: Probably want to return the number of pixels directly from decomp. */
-    outsize = width * height * 3;
-    ret = fwrite(buffer, 1, outsize, fout);
-    if (ret != outsize) {
-        fprintf(stderr, "Failed to write %s\n", outfile);
-	rc = EXIT_FAILURE;
-    } else {
-        fprintf(stderr, "Wrote %zd bytes to %s\n", outsize, outfile);
-    }
-
-    free(buffer);
- out2:
-    fclose(fout);
- out1:
-    fclose(fh);
-    return rc;
 }
