@@ -1,13 +1,15 @@
 #include <assert.h>
+#include <endian.h>
+#include <errno.h>
+#include <math.h>
+#include <png.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <endian.h>
-#include <errno.h>
-#include <unistd.h>
+#include <string.h>
 #include <sys/stat.h>
-#include <math.h>
+#include <unistd.h>
 
 #include "libetc2.h"
 
@@ -54,18 +56,37 @@ int main(int argc, char *argv[])
       goto out1;
     }
 
-    outsize = fdecomp(fh, width, height, &buffer);
+    outsize = fdecomp(fh, &width, &height, &buffer);
     if (outsize < 0) {
       fprintf(stderr, "Decomposition failed\n");
       goto out2;
     }
 
-    ret = fwrite(buffer, 1, outsize, fout);
-    if (ret != outsize) {
+    fprintf(stderr, "width: %zd; height: %zd\n", width, height);
+
+    if (strstr(outfile, ".png")) {
+      png_image *info = calloc(1, sizeof(png_image));
+      info->version = PNG_IMAGE_VERSION;
+      info->width = width;
+      info->height = height;
+      info->format = PNG_FORMAT_RGB;
+      png_image_write_to_stdio(info, fout, 0, buffer, 0, NULL);
+
+      if (info->warning_or_error) {
+	fprintf(stderr, "woe: 0x%08x\n", info->warning_or_error);
+	fprintf(stderr, "%s", info->message);
+	rc = EXIT_FAILURE;
+      }
+      png_image_free(info);
+      free(info);
+    } else {
+      ret = fwrite(buffer, 1, outsize, fout);
+      if (ret != outsize) {
         fprintf(stderr, "Failed to write %s\n", outfile);
 	rc = EXIT_FAILURE;
-    } else {
+      } else {
         fprintf(stderr, "Wrote %zd bytes to %s\n", outsize, outfile);
+      }
     }
 
     free(buffer);

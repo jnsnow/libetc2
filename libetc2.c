@@ -473,7 +473,7 @@ extern uint8_t *decomp(FILE *fh, int width, int height, size_t *len)
     return NULL;
 }
 
-extern ssize_t fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
+extern ssize_t fdecomp(FILE *fh, size_t *width, size_t *height, uint8_t **outbuffer)
 {
     int fd, rc;
     struct stat buf = { 0 };
@@ -505,24 +505,24 @@ extern ssize_t fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffe
       fprintf(stderr, "nblocks is %zd\n", nblocks);
     }
 
-    if (width == 0) {
+    if (*width == 0) {
       size_t wblocks = sqrt(nblocks);
-      width = wblocks * 4;
+      *width = wblocks * 4;
       if (DEBUG) {
-        fprintf(stdout, "guessing width: %zd blocks, %zd pixels\n", wblocks, width);
+        fprintf(stdout, "guessing width: %zd blocks, %zd pixels\n", wblocks, *width);
       }
     }
 
-    if (height == 0) {
-      size_t wblocks = ((width + 3) / 4);
+    if (*height == 0) {
+      size_t wblocks = ((*width + 3) / 4);
       size_t hblocks = nblocks / wblocks;
-      height = hblocks * 4;
+      *height = hblocks * 4;
       if (DEBUG) {
-	fprintf(stdout, "guessing height: %zd blocks, %zd pixels\n", hblocks, height);
+	fprintf(stdout, "guessing height: %zd blocks, %zd pixels\n", hblocks, *height);
       }
     }
 
-    minblocks = ((width + 3) / 4) * ((height + 3) / 4);
+    minblocks = ((*width + 3) / 4) * ((*height + 3) / 4);
     minbytes = minblocks * sizeof(uint64_t);
 
     if (DEBUG) {
@@ -534,11 +534,11 @@ extern ssize_t fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffe
       fprintf(stderr, "The resolution specified (%zd x %zd) "
 	      "requires a minimum of %zd bytes, "
 	      "but the file passed has only %zd bytes\n",
-	      width, height, minbytes, buf.st_size);
+	      *width, *height, minbytes, buf.st_size);
       return -EINVAL;
     }
 
-    buffer = decomp(fh, width, height, &buflen);
+    buffer = decomp(fh, *width, *height, &buflen);
     if (!buffer) {
       fprintf(stderr, "Decomposition failed\n");
       return -1;
