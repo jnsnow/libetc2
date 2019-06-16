@@ -394,15 +394,17 @@ extern rgb8 *deblock(FILE *fh)
     return deblock_etc1(block, base);
 }
 
-extern uint8_t *decomp(FILE *fh, int width, int height)
+extern uint8_t *decomp(FILE *fh, int width, int height, size_t *len)
 {
     int xblocks = (width + 3) / 4;
     int yblocks = (height + 3) / 4;
     uint8_t *buffer;
     rgb8 **groups;
     size_t i = 0;
+    size_t buflen;
 
-    buffer = (uint8_t *)malloc(width * height * 3);
+    buflen = width * height * 3;
+    buffer = (uint8_t *)malloc(buflen);
     if (buffer == NULL) {
         return NULL;
     }
@@ -457,6 +459,7 @@ extern uint8_t *decomp(FILE *fh, int width, int height)
     }
 
     free(groups);
+    *len = buflen;
     return buffer;
 
  fail:
@@ -470,13 +473,14 @@ extern uint8_t *decomp(FILE *fh, int width, int height)
     return NULL;
 }
 
-extern int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
+extern ssize_t fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
 {
     int fd, rc;
     struct stat buf = { 0 };
     size_t nblocks;
     size_t minblocks, minbytes;
     uint8_t *buffer;
+    size_t buflen;
 
     if (!fh) {
         return -EINVAL;
@@ -513,7 +517,9 @@ extern int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
       size_t wblocks = ((width + 3) / 4);
       size_t hblocks = nblocks / wblocks;
       height = hblocks * 4;
-      fprintf(stdout, "guessing height: %zd blocks, %zd pixels\n", hblocks, height);
+      if (DEBUG) {
+	fprintf(stdout, "guessing height: %zd blocks, %zd pixels\n", hblocks, height);
+      }
     }
 
     minblocks = ((width + 3) / 4) * ((height + 3) / 4);
@@ -532,12 +538,12 @@ extern int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer)
       return -EINVAL;
     }
 
-    buffer = decomp(fh, width, height);
+    buffer = decomp(fh, width, height, &buflen);
     if (!buffer) {
       fprintf(stderr, "Decomposition failed\n");
       return -1;
     }
 
     *outbuffer = buffer;
-    return 0;
+    return buflen;
 }

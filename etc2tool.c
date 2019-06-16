@@ -54,14 +54,12 @@ int main(int argc, char *argv[])
       goto out1;
     }
 
-    rc = fdecomp(fh, width, height, &buffer);
-    if (rc != 0) {
+    outsize = fdecomp(fh, width, height, &buffer);
+    if (outsize < 0) {
       fprintf(stderr, "Decomposition failed\n");
       goto out2;
     }
 
-    /* FIXME: Probably want to return the number of pixels directly from decomp. */
-    outsize = width * height * 3;
     ret = fwrite(buffer, 1, outsize, fout);
     if (ret != outsize) {
         fprintf(stderr, "Failed to write %s\n", outfile);

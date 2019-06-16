@@ -27,7 +27,7 @@ extern rgb8 *deblock_etc1(uint64_t block, rgb8 base[3]);
 extern rgb8 *deblock_etc2(uint64_t block, rgb8 base[3], char mode, uint8_t dist);
 extern rgb8 *deblock_planar(uint64_t block, rgb8 base[3]);
 extern rgb8 *deblock(FILE *fh);
-extern uint8_t *decomp(FILE *fh, int width, int height);
-extern int fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer);
+extern uint8_t *decomp(FILE *fh, int width, int height, size_t *len);
+extern ssize_t fdecomp(FILE *fh, size_t width, size_t height, uint8_t **outbuffer);
 
 #endif
